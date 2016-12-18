@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:util="http://www.springframework.org/schema/util" 
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+       http://www.springframework.org/schema/tx
+		http://www.springframework.org/schema/tx/spring-tx-3.0.xsd
+		http://www.springframework.org/schema/aop 
+		http://www.springframework.org/schema/aop/spring-aop-3.0.xsd
+       http://www.springframework.org/schema/context 
+       http://www.springframework.org/schema/context/spring-context-3.0.xsd
+       http://www.springframework.org/schema/util 
+       http://www.springframework.org/schema/util/spring-util-3.0.xsd 
+       http://www.springframework.org/schema/mvc 
+       http://www.springframework.org/schema/mvc/spring-mvc-3.0.xsd
+      ">
+    
+    <!-- 对web包中的所有类进行扫描，以完成Bean创建和自动依赖注入的功能 -->
+    <context:component-scan base-package="com.blog"/>
+	<!-- 支持aop注解 -->
+	<aop:aspectj-autoproxy />
+	<mvc:annotation-driven/><!-- 支持spring3.0新的mvc注解 -->
+	
+	<bean class="org.springframework.web.servlet.mvc.annotation.AnnotationMethodHandlerAdapter">
+    	<!-- 使用ajax需要配置下面这些东西  spring使用了jackson类库，帮助我们在java对象和json、xml数据之间的互相转换。他可以将控制器返回的对象直接转换成json数据，供客户端使用。客户端也可以传送json数据到服务器进行直接转换-->
+    	<property name="cacheSeconds" value="0"/>
+    	<property name="messageConverters">
+    		<list>
+    			<bean 
+    			class="org.springframework.http.converter.json.MappingJacksonHttpMessageConverter"></bean>
+    		</list>
+    	</property>
+    </bean>
+	
+	 <!-- 静态资源过滤 -->
+	  <!-- 上传的图片缓存1个月，其他js，css，img资源缓存一年 -->  
+	 <mvc:resources location="/img/" mapping="/img/**" cache-period="31536000"/>
+	 <mvc:resources mapping="/css/**" location="/css/" cache-period="31536000"/>  
+    <mvc:resources mapping="/js/**" location="/js/" cache-period="31536000"/>
+    <mvc:resources mapping="/fonts/**" location="/fonts/" cache-period="31536000"/>
+	
+	
+    <!--对模型视图名称的解析，即在模型视图名称添加前后缀 -->
+    <bean class="org.springframework.web.servlet.view.InternalResourceViewResolver" 
+         p:suffix=".jsp"   p:prefix="/jsp/">
+         <!-- 如果使用jstl的话，配置下面的属性 -->
+    	<property name="viewClass" value="org.springframework.web.servlet.view.JstlView" />       
+    </bean>
+    
+    <!-- <context:property-placeholder location="classpath:db.properties"/> -->  
+    <!-- 将多个配置文件读取到容器中，交给Spring管理 -->  
+    <bean id="properConfig" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+    	<property name="locations">
+    		<list>
+    		  <!-- 这里支持多种寻址方式：classpath和file  
+              <value>classpath:/opt/demo/config/demo-db.properties</value> -->  
+              <!-- 推荐使用file的方式引入，这样可以将配置和代码分离 -->  
+              <value>file:E:/MyEclipse10.0/yzblog/MyBlog/WebRoot/db.properties</value>  
+    		</list>
+    	</property>
+    </bean>
+    
+    <!-- 配置datasource -->
+    <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource">
+    	<property name="driverClassName"  
+                value="${jdbc.driverClassName}">  
+            </property>  
+            <property name="url" value="${jdbc.url}"></property>  
+            <property name="username" value="${jdbc.username}"></property>  
+            <property name="password" value="${jdbc.password}"></property>
+    </bean>
+    <!-- 配置sessionFoctory -->
+    <bean id="sessionFactory"  
+       class="org.springframework.orm.hibernate3.annotation.AnnotationSessionFactoryBean">  
+           <property name="dataSource">  
+               <ref bean="dataSource" />  
+           </property>
+           <property name="hibernateProperties">  
+               <props>  
+               	<!-- key的名字前面都要加hibernate. -->
+                   <prop key="hibernate.dialect">  
+                       org.hibernate.dialect.MySQLDialect  
+                   </prop>  
+                   <prop key="hibernate.show_sql">true</prop>
+                   <prop key="hibernate.hbm2ddl.auto">update</prop>
+               </props>
+           </property>
+		<property name="packagesToScan">
+			<value>com.blog.entity</value>
+		</property>
+   </bean>  
+
+	<bean id="hibernateTemplate" class="org.springframework.orm.hibernate3.HibernateTemplate" >
+		<property name="sessionFactory" ref="sessionFactory"></property>
+	</bean>
+	
+	<!--配置一个JdbcTemplate实例-->  
+	<bean id="jdbcTemplate"  class="org.springframework.jdbc.core.JdbcTemplate">   
+	     <property name="dataSource" ref="dataSource"/>   
+	</bean>  
+	
+	
+	<!-- 配置事务管理 -->
+	<bean id="txManager" class="org.springframework.orm.hibernate3.HibernateTransactionManager" >
+		<property name="sessionFactory" ref="sessionFactory"></property>
+	</bean>
+
+	<tx:annotation-driven transaction-manager="txManager" />
+	<aop:config> 
+		<aop:pointcut expression="execution(public * com.blog.service.*.*(..))" id="businessService"/> 
+		<aop:advisor advice-ref="txAdvice" pointcut-ref="businessService" /> 
+	</aop:config> 
+	<tx:advice id="txAdvice" transaction-manager="txManager" > 
+		<tx:attributes> 
+			<tx:method name="find*"  read-only="true" propagation="NOT_SUPPORTED"  /> 
+			<!-- get开头的方法不需要在事务中运行 。 
+			有些情况是没有必要使用事务的，比如获取数据。开启事务本身对性能是有一定的影响的--> 
+			<tx:method name="*"/>    <!-- 其他方法在实务中运行 --> 
+		</tx:attributes> 
+	</tx:advice> 
+</beans>
